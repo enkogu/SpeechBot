@@ -1,4 +1,6 @@
 const { spawn } = require('child_process');
+const { exec } = require('child_process');
+
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
@@ -8,6 +10,59 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 
+const sendMessageInChunks = async (ctx, message) => {
+    const maxChunkSize = 1500;
+    const chunks = splitMessage(message, maxChunkSize);
+    for (const chunk of chunks) {
+        await ctx.replyWithMarkdown(chunk);
+    }
+};
+
+const splitMessage = (message, maxChunkSize) => {
+    const chunks = [];
+    let startIdx = 0;
+    while (startIdx < message.length) {
+        let endIdx = Math.min(startIdx + maxChunkSize, message.length);
+        if (endIdx < message.length) {
+            const lastSentenceEnd = message.lastIndexOf('.', endIdx);
+            const lastWordEnd = message.lastIndexOf(' ', endIdx);
+            if (lastSentenceEnd > startIdx) {
+                endIdx = lastSentenceEnd + 1;
+            } else if (lastWordEnd > startIdx) {
+                endIdx = lastWordEnd;
+            }
+        }
+        chunks.push(message.slice(startIdx, endIdx));
+        startIdx = endIdx;
+    }
+    return chunks;
+};
+
+function reduceBitrate(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        const args = ['-i', inputPath, '-b:a', '64k', outputPath];
+        const ffmpegProcess = spawn('ffmpeg', args);
+
+        let stderr = '';
+        ffmpegProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        ffmpegProcess.on('close', (code) => {
+            if (code !== 0) {
+                console.error(`ffmpeg process exited with code ${code}`);
+                console.error(`Error: ${stderr}`);
+                return reject(new Error(stderr));
+            }
+            resolve(outputPath);
+        });
+
+        ffmpegProcess.on('error', (error) => {
+            console.error(`Error: ${error.message}`);
+            reject(error);
+        });
+    });
+}
 async function transcribeAudio(filePath) {
     const form = new FormData();
     form.append('file', fs.createReadStream(filePath));
@@ -42,12 +97,16 @@ async function downloadFile(url, filePath) {
 
 async function convertFile(inputPath) {
     const outputPath = path.join(path.dirname(inputPath), `${path.basename(inputPath, path.extname(inputPath))}${Math.random()}.mp3`);
-    const cmd = spawn('ffmpeg', ['-i', inputPath, outputPath]);
+    
+    await reduceBitrate(inputPath, outputPath)
+    return outputPath
+    // const cmd = spawn('ffmpeg', ['-i', inputPath, ' -b:a 64k ', outputPath + '-full.mp3']);
 
-    return new Promise((resolve, reject) => {
-        cmd.on('error', reject);
-        cmd.on('close', code => code === 0 ? resolve(outputPath) : reject(new Error(`🔊 convert: ⛔️ error. code: ${code}`)));
-    });
+    // // await reduceBitrate(outputPath + '-full.mp3',  outputPath + '.mp3')
+    // return new Promise((resolve, reject) => {
+    //     cmd.on('error', reject);
+    //     cmd.on('close', code => code === 0 ? resolve(outputPath) : reject(new Error(`🔊 convert: ⛔️ error. code: ${code}`)));
+    // });
 }
 
 async function prepareAudio(ctx) {
@@ -63,8 +122,11 @@ async function prepareAudio(ctx) {
 async function voiceHandler(ctx, bot) {
     try {
         const outputPath = await prepareAudio(ctx);
+        console.log('outputPath:::', outputPath)
         const recognizedText = await transcribeAudio(outputPath);
-        ctx.replyWithMarkdown(`${recognizedText}`);
+        console.log('recognizedText:::', recognizedText)
+
+        sendMessageInChunks(ctx, recognizedText);
     } catch (err) {
         console.log('⛔️ err:', err)
         ctx.replyWithMarkdown(`⛔️ *Error*\n${JSON.stringify(err)}`);
