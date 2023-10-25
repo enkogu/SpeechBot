@@ -96,17 +96,12 @@ async function downloadFile(url, filePath) {
 }
 
 async function convertFile(inputPath) {
-    const outputPath = path.join(path.dirname(inputPath), `${path.basename(inputPath, path.extname(inputPath))}${Math.random()}.mp3`);
-    
-    await reduceBitrate(inputPath, outputPath)
-    return outputPath
-    // const cmd = spawn('ffmpeg', ['-i', inputPath, ' -b:a 64k ', outputPath + '-full.mp3']);
+    const fileBaseName = path.basename(inputPath, path.extname(inputPath));
+    const newFileName = `${fileBaseName}-${Date.now()}.mp3`;
+    const outputPath = path.join(path.dirname(inputPath), newFileName);
 
-    // // await reduceBitrate(outputPath + '-full.mp3',  outputPath + '.mp3')
-    // return new Promise((resolve, reject) => {
-    //     cmd.on('error', reject);
-    //     cmd.on('close', code => code === 0 ? resolve(outputPath) : reject(new Error(`🔊 convert: ⛔️ error. code: ${code}`)));
-    // });
+    await reduceBitrate(inputPath, outputPath);
+    return outputPath;
 }
 
 async function prepareAudio(ctx) {
