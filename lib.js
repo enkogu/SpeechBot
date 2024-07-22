@@ -87,45 +87,25 @@ async function transcribeAudio(filePath) {
 
 async function transcribeAudioGROQ(filePath) {
     const form = new FormData();
-    form.append('file', createReadStream(filePath));
+    form.append('file', fs.createReadStream(filePath));
     form.append('model', 'whisper-large-v3');
     form.append('language', 'ru');
-  
-    const headers = {
-      'Authorization': 'Bearer ' + process.env.GROQ_API_KEY,
-      'Content-Type': 'multipart/form-data',
-      ...form.getHeaders(),
-    };
-  
-    const options = {
-      method: 'POST',
-      headers: headers,
-    };
-  
-    return new Promise((resolve, reject) => {
-      const req = https.request('https://api.groq.com/openai/v1/audio/transcriptions', options, (res) => {
-        let data = '';
-        console.log("res.statusCode: ", res.statusCode)
-        res.on('data', (chunk) => {
-          data += chunk;
+
+    try {
+        const response = await axios.post('https://api.groq.com/openai/v1/audio/transcriptions', form, {
+            headers: {
+                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                ...form.getHeaders(),
+            },
         });
-  
-        res.on('end', () => {
-          const result = JSON.parse(data);
-          if (!result.text || result.text.length === 0) {
-            reject('⛔️ No text');
-          }
-          resolve(result.text);
-        });
-      });
-  
-      req.on('error', (err) => {
-        reject(err);
-      });
-  
-      form.pipe(req);
-    });
-  }
+
+        const result = response.data;
+        return result.text || Promise.reject('⛔️ No text');
+    } catch (error) {
+        console.error('⛔️ err:', error);
+        throw error;
+    }
+}
 
 
 async function downloadFile(url, filePath) {
